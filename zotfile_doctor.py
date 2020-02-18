@@ -63,6 +63,8 @@ def get_dir_set(d):
     return d_set
 
 
+db = "/home/daniel/Zotero/zotero.sqlite"
+d = '/home/daniel/Dropbox/Zotero/'
 def main(db, d):
     db_set = get_db_set(db, d)
     dir_set = get_dir_set(d)
@@ -80,12 +82,32 @@ def main(db, d):
         f"There were {len(dir_not_db)}/{len(dir_set)} files in zotfile directory but not in DB:")
     for f in sorted(dir_not_db):
         print("   " + f)
+    return db_not_dir, dir_not_db
+from pathlib import Path
+temp = '/home/daniel/temp_files/'
 
-
+zot = 0 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} zotero.sqlite zotfile_directory")
-        sys.exit(1)
+        #sys.exit(1)
+        db_not_dir, dir_not_db = main(db, d)
+        db_set = get_db_set(db, d)
+        dir_set = get_dir_set(d)
+        
 
-    main(sys.argv[1],
-         sys.argv[2])
+
+        for file in dir_not_db:
+            try:
+                Path( d + file).rename(temp + file)
+            except:
+                print(f"{file} not found")
+        if zot:
+            z =  "/home/daniel/Zotero/temp"
+            zot_temp_set = get_dir_set(z)
+            zot_not_db = zot_temp_set.difference(dir_set) 
+            print("zotero_temp")
+            for file in zot_not_db:
+                print(file)
+    else:
+        main(sys.argv[1], sys.argv[2])
