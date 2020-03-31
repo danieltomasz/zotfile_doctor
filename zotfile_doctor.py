@@ -21,9 +21,27 @@ import fnmatch
 import os
 import pathlib
 import re
+from pathlib import Path
+from sys import platform
 
-def get_db_set(db, d):
-    conn = sqlite3.connect(db)
+
+def get_db_set(database, zotDir):
+    """ Return pdfs names that are content of the sqlite zotero database
+    
+    Parameters
+    ----------
+    database : Path object
+        Path to Zotero database
+    zotDir : Path object
+        Path to Zotfile folder
+
+    Returns
+    -------
+    database_set: set
+        Set with pdf's names  to which Zotero database points to 
+    """
+
+    conn = sqlite3.connect(database)
 
     db_c = conn.execute(
         'select path from itemAttachments where linkMode = 2 or linkMode = 3 and contentType = "application/pdf"')
@@ -39,35 +57,73 @@ def get_db_set(db, d):
             if item.count('attachments:') > 0: # relative path
                 item = item.replace('attachments:', "")
             else: # absolute path
-                item = str(pathlib.Path(item).relative_to(d))
+                item = str(pathlib.Path(item).relative_to(zotDir))
         except:
             # file is not in zotfile directory
             continue
 
         db_l.append(unicodedata.normalize("NFD", item))
         
-    db_set = set(db_l)
-    return db_set
+    database_set = set(db_l)
+    return database_set
 
 
-def get_dir_set(d):
+def get_dir_set(zotDir):
+    """ Return pdfs names from given folder
+    
+    Parameters
+    ----------
+    dir_path : Path object
+        Path to dropbox folder in which files are stored
+    
+    Returns
+    -------
+    dir_set: set
+        Set with pdf's names contained in the folder
+    """
+
     rule = re.compile(fnmatch.translate("*.pdf"), re.IGNORECASE)
     matches = []
-    for root, dirnames, filenames in os.walk(d):
+    for root, dirnames, filenames in os.walk(zotDir):
         for filename in [name for name in filenames if rule.match(name)]:
             matches.append(os.path.join(root, filename))
 
-    fs = [str(pathlib.Path(f).relative_to(d)) for f in matches]
+    fs = [str(pathlib.Path(f).relative_to(zotDir)) for f in matches]
     fs = [unicodedata.normalize("NFD", x) for x in fs]
-    d_set = set(fs)
-    return d_set
+    zotfile_set = set(fs)
+    return zotfile_set
 
 
-db = "/home/daniel/Zotero/zotero.sqlite"
-d = '/home/daniel/Dropbox/Zotero/'
-def main(db, d):
-    db_set = get_db_set(db, d)
-    dir_set = get_dir_set(d)
+def create_dir(tempDir):
+    """ Create directory on given path """
+    if not os.path.exists(tempDir):
+        os.mkdir(tempDir)
+        print("Directory " , tempDir ,  " Created ")
+    else:    
+        print("Directory " , tempDir ,  " already exists")
+
+
+def database_vs_zotfile(database, zotDir):
+    """ Get and print differences between Zotero database and Zotfile folder
+    
+    Parameters
+    ----------
+    database : Path object
+        Path to Zotero database
+    zotDir : Path object
+        Path to Zotfile folder
+
+    
+    Returns
+    -------
+    db_not_dir : set
+        set of pdf recorded in sqlite file not in Zotfile folder
+    dir_not_db : set 
+        set of files in Zotfile folder but not in Zotero sqlite database
+
+    """
+    db_set = get_db_set(database, zotDir)
+    dir_set = get_dir_set(zotDir)
 
     db_not_dir = db_set.difference(dir_set)
     dir_not_db = dir_set.difference(db_set)
@@ -82,32 +138,62 @@ def main(db, d):
         f"There were {len(dir_not_db)}/{len(dir_set)} files in zotfile directory but not in DB:")
     for f in sorted(dir_not_db):
         print("   " + f)
-    return db_not_dir, dir_not_db
-from pathlib import Path
-temp = '/home/daniel/temp_files/'
+    return db_not_dir, dir_not_db, db_set, dir_set
 
-zot = 0 
-if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} zotero.sqlite zotfile_directory")
-        #sys.exit(1)
-        db_not_dir, dir_not_db = main(db, d)
-        db_set = get_db_set(db, d)
-        dir_set = get_dir_set(d)
+def move_zofiles_not_in_database(database, zotDir, tempDir):
+    """ Move files that are not in Zotero database, but in Zotfile dir to tempDir """
+
+    db_not_dir, dir_not_db , db_set, dir_set = database_vs_zotfile(database, zotDir)
+
+    # Create target Directory if don't exist
+    create_dir(tempDir)
+    for file in dir_not_db:
+        try:
+            print(zotDir / file)
+            print("i")
+            Path( zotDir / file).rename(tempDir / file)
+        except:
+           print(f"{file} not found")
+
+
+
+
+if platform == "linux" or platform == "linux2":# on linux
+    userPath = Path("/home/daniel/")
+elif platform == "darwin":#on mac
+    userPath = Path("/Users/daniel/")
+    
+database = userPath / "Zotero/zotero.sqlite"
+zotDir =  userPath / "Dropbox/Zotero/"
+tempDir    =   userPath / "temp_files/"
+
+#move_zofiles_not_in_database(database, zotDir, tempDir)
+
+# %%
+ZoteroStorage = userPath / "Zotero/storage"
+StorageTemp =  userPath /  "storage_temp"
+
+
+def move_zotero_storage_files(ZoteroStorage, StorageTemp, zotDir):
+    """ Move files  from zoteto storage folders"""
+    create_dir(StorageTemp)    
+    for path in ZoteroStorage.rglob('*.pdf'):
+        print(path.name)
+        path.rename(StorageTemp / path.name)
         
+    zot_temp_set = get_dir_set(StorageTemp)
+    zot_not_zotFile = zot_temp_set.difference(get_dir_set(zotDir))
+    for file in zot_not_zotFile:
+                 print(file)
+
+move_zotero_storage_files(ZoteroStorage, StorageTemp, zotDir)
+
+# files in Zotero default folder but not in Zoffile folder  
 
 
-        for file in dir_not_db:
-            try:
-                Path( d + file).rename(temp + file)
-            except:
-                print(f"{file} not found")
-        if zot:
-            z =  "/home/daniel/Zotero/temp"
-            zot_temp_set = get_dir_set(z)
-            zot_not_db = zot_temp_set.difference(dir_set) 
-            print("zotero_temp")
-            for file in zot_not_db:
-                print(file)
-    else:
-        main(sys.argv[1], sys.argv[2])
+#         
+#         if zot:
+#             z =  "/home/daniel/Zotero/temp"
+#            
+#     else:
+#         main(sys.argv[1], sys.argv[2])
